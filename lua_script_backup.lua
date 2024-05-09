@@ -1,13 +1,22 @@
--- Define a function to create a progress bar
-LastData = { 0, 0, 0, 0 }
+crsfPayload = {
+  0,    -- Wifi
+  0,    -- Armed
+  0,    -- Control Source
+  -1,    -- Status
+  0x00, 0x00, -- Speed Limit
+  0x00, 0x00, -- Current Limit
+  0,    -- Torque Limit
+}
 
-
-local function drawProgressBar(x, y, w, h, value, max_value, fillColor)
-  local ratio = math.max(0, math.min(value / max_value, 1)) -- Ensure the ratio is between 0 and 1
-  local bar_width = ratio * w
-  lcd.drawRectangle(x, y, w, h, BLACK)
-  lcd.drawFilledRectangle(x, y, bar_width, h, fillColor)
-end
+-- crsfPayload = {
+--   1,    -- Wifi
+--   1,    -- Armed
+--   3,    -- Control Source
+--   1,    -- Status
+--   0x01, 0x28, -- Speed Limit
+--   0x00, 0xFA, -- Current Limit
+--   65,    -- Torque Limit
+-- }
 
 -- Function to handle the source value logic based on a channel value
 local function getSourceValue(channel)
@@ -20,7 +29,7 @@ end
 local function crossfirePop()
   local command, data = crossfireTelemetryPop() -- 从遥测系统弹出命令和数据
   if command == 0x7F and data ~= nil then
-    LastData = data
+    crsfPayload = data
   end
 end
 
@@ -40,21 +49,30 @@ local function drawRow1Box(x, text, textColor, backgroundColor)
   drawBoxWithText(x, y, width, height, textColor, backgroundColor, text)
 end
 
+local function drawProgressBar(x, y, w, h, value, max_value, fillColor)
+  local ratio = math.max(0, math.min(value / max_value, 1)) -- Ensure the ratio is between 0 and 1
+  local bar_width = ratio * w
+  lcd.drawRectangle(x, y, w, h, BLACK)
+  lcd.drawFilledRectangle(x, y, bar_width, h, fillColor)
+end
+
 local function drawProgressBarWithText(x, y, value, max_value, text)
-  local height = 34
-  local textColor  = BLACK + MIDSIZE
+  local height    = 34
+  local textColor = BLACK + MIDSIZE
   local textWidth = 150
-  local barWidth = 480 - textWidth
+  local barWidth  = 480 - textWidth
   lcd.drawText(x + 4, y + 2, text, textColor)
   drawProgressBar(x + textWidth + 10, y + 4, barWidth - 20, height - 8, value, max_value, BLACK)
 end
 
--- local function drawRow1Box(x, text, backgroundColor, textColor)
---   local width = 130
---   local height = 34
---   lcd.drawFilledRectangle(x, 0, width, height, backgroundColor)
---   lcd.drawText(x + 4, 2, text, textColor + MIDSIZE)
--- end
+local function statusToString(status)
+  if status == 0 then return "ALL SYSTEMS GO" end
+  if status == 1 then return "LOW BATTERY" end
+  if status == 2 then return "NO TX SIGNAL" end
+  if status == 3 then return "MOTOR ERROR" end
+  if status == 4 then return "DISARMED" end
+  return "UNKNOWN"
+end
 
 -- Function to create the widget
 local function create(zone, options)
@@ -81,33 +99,39 @@ local function refresh(wgt)
   local x, y = zone.x, zone.y
   local w, h = zone.w, zone.h -- 480x272
   local textColor = BLACK
-  local barHeight = 20
   -- local lineHeight = 22 + 7 -- Adjusted for spacing
   local lineHeight = 34
-  local labelWidth = 120    -- Adjusted for MIDSIZE text
-  local barWidth = zone.w - labelWidth - 70
-  local barColor = BLACK
+  local labelWidth = 120 -- Adjusted for MIDSIZE text
 
   -- Telemetry data display
   -- Assume getValue returns telemetry values between 0-100 for percentages, actual values for others
   local telemetryData = {
-    rssi = getValue('RSS1'),
+    rssi = getValue('1RSS'),
     link = getValue('RQly'),
     fuel = getValue('Bat%'),
     curr = getValue('Curr'),
-    volt = getValue('VOLT'),
-    rover = getValue('ch5'),
+    volt = getValue('RxBt'),
+    armed = getValue('ch5'),
+    trueArmed = crsfPayload[2] == 1,
     batt = getValue('tx-voltage'),
-    dashboard = getValue('ch7'),
-    bat1 = getValue('Capa')
+    wifi = getValue('ch7') > 0,
+    trueWifi = crsfPayload[1] == 1,
+    bat1 = getValue('Capa'),
+    trueControlSource = crsfPayload[3],
+    statusInt = crsfPayload[4],
+    speedLimit = (crsfPayload[5] * 256 + crsfPayload[6]) / 10,
+    currentLimit = (crsfPayload[7] * 256 + crsfPayload[8]) / 10,
+    torqueLimit = (crsfPayload[9]) / 10,
   }
 
+
   local GREEN = lcd.RGB(0x4CAF50)
+  local ORANGE = lcd.RGB(0xFF9800)
   local RED = lcd.RGB(0xF44336)
 
   -- Clear canvas
   lcd.drawFilledRectangle(x, y, w, h, WHITE)
-  
+
   local row1BoxWidth = 130
 
   -- Draw source
@@ -115,18 +139,16 @@ local function refresh(wgt)
   drawRow1Box(row1BoxWidth * 0, sourceValue, BLACK, WHITE)
 
   -- Draw armed/disarmed
-  local armedColor = telemetryData.rover <= 0 and RED or GREEN
-  local armedText = telemetryData.rover <= 0 and "DISARMED" or "ARMED"
+  local armedBool = telemetryData.armed > 0
+  local armedColor = (armedBool == telemetryData.trueArmed) and (armedBool and GREEN or RED) or ORANGE
+  local armedText = telemetryData.trueArmed and "ARMED" or "DISARMED"
   drawRow1Box(row1BoxWidth * 1, armedText, WHITE, armedColor)
-  
+
   -- Draw wifi
-  -- Switch on + confirmed on = red
-  -- switch on + confirmed off = orange
-  -- switch off + * = green
-  local telemWifiEnabled = false -- TODO (custom telemetry)
-  local wifiSwitch = telemetryData.dashboard > 0
-  local wifiColor = wifiSwitch and (telemWifiEnabled and RED or ORANGE) or GREEN
-  drawRow1Box(row1BoxWidth * 2, "WiFi OFF", WHITE, wifiColor)
+  local wifiSwitch = telemetryData.wifi
+  local wifiColor = (wifiSwitch == telemetryData.trueWifi) and (wifiSwitch and RED or GREEN) or ORANGE
+  local wifiText = telemetryData.trueWifi and "WiFi ON" or "WiFi OFF"
+  drawRow1Box(row1BoxWidth * 2, wifiText, WHITE, wifiColor)
 
   -- TODO is it possible to get the percentage directly?
   local fullVoltage = 8.3
@@ -137,62 +159,46 @@ local function refresh(wgt)
   end
   -- Draw transmitter battery percentage
   drawBoxWithText(row1BoxWidth * 3, 0, 480 - (row1BoxWidth * 3), 34, BLACK, WHITE,
-  "TX " .. math.floor(batteryPercent) .. "%")
-  
+    "TX " .. math.floor(batteryPercent) .. "%")
+
 
   -- Row 2
-  local voltageString = string.format("VOLTAGE %.1f", telemetryData.volt)
-  local currentString = string.format("CURRENT %.1f", telemetryData.curr)
-  local batteryCountString = "BATT #" .. 4
-  local row2String = voltageString .. "  " .. currentString .. "  " .. batteryCountString
+  local voltageString = string.format("VOLTAGE %.1fV", telemetryData.volt)
+  local currentString = string.format("CURRENT %.1fA", telemetryData.curr)
+  -- local batteryCountString = "BATT #" .. 4
+  local row2String = voltageString .. "  " .. currentString
   lcd.drawText(x + 4, y + lineHeight, row2String, textColor + MIDSIZE)
 
-  -- Row 3 (battery) 
-  local battString = "BATT: " .. telemetryData.fuel.. "%"
+  -- Row 3 (battery)
+  local battString = "BATT: " .. telemetryData.fuel .. "%"
   drawProgressBarWithText(x, y + 2 * lineHeight, telemetryData.fuel, 100, battString)
-  
+
   -- Row 4 (System Status)
-  drawBoxWithText(x, y + 3 * lineHeight, w, lineHeight, WHITE, GREEN, "ALL SYSTEMS GO")
-  
+  local statusString = statusToString(telemetryData.statusInt)
+  local statusColor = telemetryData.statusInt == 0 and GREEN or RED
+  drawBoxWithText(x, y + 3 * lineHeight, w, lineHeight, WHITE, statusColor, statusString)
+
   -- Row 5 (RSSI)
   local rssiString = "RSSI: " .. telemetryData.rssi .. "dB"
   drawProgressBarWithText(x, y + 4 * lineHeight, -telemetryData.rssi, 130, rssiString)
-  
+
   -- Row 6 (Link Quality)
   local linkString = "LINK: " .. telemetryData.link .. "%"
   drawProgressBarWithText(x, y + 5 * lineHeight, telemetryData.link, 100, linkString)
-  
+
   -- Row 7 (Limits)
-  local speedLimitString = "SPEED " .. 20 .. "rad/s"
-  local currentLimitString = "CURR " .. string.format("%.1f", 4) .. "A"
-  local torqueLimitString = "TORQUE " .. string.format("%.1f", 4) .. "Nm"
+  local speedLimitString = "SPEED " .. string.format("%.1f", telemetryData.speedLimit) .. "rad/s"
+  local currentLimitString = "CURR " .. string.format("%.1f", telemetryData.currentLimit) .. "A"
+  local torqueLimitString = "TOR " .. string.format("%.1f", telemetryData.torqueLimit) .. "Nm"
   local limitsString = speedLimitString .. " " .. currentLimitString .. " " .. torqueLimitString
   lcd.drawText(x + 4, y + 6 * lineHeight, limitsString, textColor + MIDSIZE)
-  
+
   -- Row 8 (low & critical battery voltage)
-  local lowVoltageString = string.format("%.1f", 17.5)
-  local criticalVoltageString = string.format("%.1f", 16.5)
-  local voltageThresholdsString = "LOW/EMPTY BATTERY VOLT " .. lowVoltageString .. "/" .. criticalVoltageString .. "V"
-  lcd.drawText(x + 4, y + 7 * lineHeight, voltageThresholdsString, textColor + MIDSIZE)
-  
+  --   local lowVoltageString = string.format("%.1f", 17.5)
+  --   local criticalVoltageString = string.format("%.1f", 16.5)
+  --   local voltageThresholdsString = "LOW/EMPTY BATTERY VOLT " .. lowVoltageString .. "/" .. criticalVoltageString .. "V"
+  --   lcd.drawText(x + 4, y + 7 * lineHeight, voltageThresholdsString, textColor + MIDSIZE)
 
-  -- Draw transmitter battery percent
-
-  -- Draw the source line
-  -- lcd.drawText(x + 2, y, "SOURCE: " .. sourceValue, textColor + MIDSIZE)
-
-  
-
-
-  if LastData ~= nil then
-    Frame_type = LastData[1] -- 假设第一个数据字节是帧类型
-    L_tmp = LastData[2]     -- 左电机温度
-    R_tmp = LastData[3]     -- 右电机温度
-    --DREW TETS
-    -- if not(L_tmp==nil&R_tmp==nil) then
-    --     icd.drawText(x+10,y+10,"test:"..L_tmp.."°C",textColor+MIDSIZE)
-    --   icd.drawText(x+20,y+20,"test:"..R_tmp.."°C",textColor+MIDSIZE)
-  end
 
 
   -- Draw RSSI
@@ -209,7 +215,7 @@ local function refresh(wgt)
   -- lcd.drawFilledRectangle(x + labelWidth + 250, y + 3 * lineHeight, barHeight + 10, barHeight, roverColor)
 
   -- Draw DASHBOARD ENABLED status
-  -- local dashboardColor = telemetryData.dashboard <= 0 and GREEN or RED
+  -- local dashboardColor = telemetryData.wifi <= 0 and GREEN or RED
   -- lcd.drawText(x + 2, y + 4 * lineHeight, "DASHBOARD ENABLED:", textColor + MIDSIZE)
   -- lcd.drawFilledRectangle(x + labelWidth + 250, y + 4 * lineHeight, barHeight + 10, barHeight, dashboardColor)
 
