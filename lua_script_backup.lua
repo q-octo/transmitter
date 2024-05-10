@@ -136,7 +136,7 @@ local function refresh(wgt)
   drawRow1Box(row1BoxWidth * 0, sourceValue, BLACK, WHITE)
 
   -- Draw armed/disarmed
-  local armedBool = telemetryData.armed > 0
+  local armedBool = telemetryData.armed <= 0
   local armedColor = (armedBool == telemetryData.trueArmed) and (armedBool and GREEN or RED) or ORANGE
   local armedText = telemetryData.trueArmed and "ARMED" or "DISARMED"
   drawRow1Box(row1BoxWidth * 1, armedText, WHITE, armedColor)
