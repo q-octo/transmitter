@@ -1,4 +1,4 @@
-crsfPayload = {
+CRSF_PAYLOAD = {
   0,    -- Wifi
   0,    -- Armed
   0,    -- Control Source
@@ -8,7 +8,7 @@ crsfPayload = {
   0,    -- Torque Limit
 }
 
--- crsfPayload = {
+-- CRSF_PAYLOAD = {
 --   1,    -- Wifi
 --   1,    -- Armed
 --   3,    -- Control Source
@@ -29,7 +29,7 @@ end
 local function crossfirePop()
   local command, data = crossfireTelemetryPop() -- 从遥测系统弹出命令和数据
   if command == 0x7F and data ~= nil then
-    crsfPayload = data
+    CRSF_PAYLOAD = data
   end
 end
 
@@ -50,10 +50,7 @@ local function drawRow1Box(x, text, textColor, backgroundColor)
 end
 
 local function drawProgressBar(x, y, w, h, value, max_value, fillColor)
-  local ratio = math.max(0, math.min(value / max_value, 1)) -- Ensure the ratio is between 0 and 1
-  local bar_width = ratio * w
-  lcd.drawRectangle(x, y, w, h, BLACK)
-  lcd.drawFilledRectangle(x, y, bar_width, h, fillColor)
+  lcd.drawGauge(x, y, w, h, value, max_value, fillColor)
 end
 
 local function drawProgressBarWithText(x, y, value, max_value, text)
@@ -71,7 +68,7 @@ local function statusToString(status)
   if status == 2 then return "NO TX SIGNAL" end
   if status == 3 then return "MOTOR ERROR" end
   if status == 4 then return "DISARMED" end
-  return "UNKNOWN"
+  return "DISCONNECTED"
 end
 
 -- Function to create the widget
@@ -112,16 +109,16 @@ local function refresh(wgt)
     curr = getValue('Curr'),
     volt = getValue('RxBt'),
     armed = getValue('ch5'),
-    trueArmed = crsfPayload[2] == 1,
+    trueArmed = CRSF_PAYLOAD[2] == 1,
     batt = getValue('tx-voltage'),
     wifi = getValue('ch7') > 0,
-    trueWifi = crsfPayload[1] == 1,
+    trueWifi = CRSF_PAYLOAD[1] == 1,
     bat1 = getValue('Capa'),
-    trueControlSource = crsfPayload[3],
-    statusInt = crsfPayload[4],
-    speedLimit = (crsfPayload[5] * 256 + crsfPayload[6]) / 10,
-    currentLimit = (crsfPayload[7] * 256 + crsfPayload[8]) / 10,
-    torqueLimit = (crsfPayload[9]) / 10,
+    trueControlSource = CRSF_PAYLOAD[3],
+    statusInt = CRSF_PAYLOAD[4],
+    speedLimit = (CRSF_PAYLOAD[5] * 256 + CRSF_PAYLOAD[6]) / 10,
+    currentLimit = (CRSF_PAYLOAD[7] * 256 + CRSF_PAYLOAD[8]) / 10,
+    torqueLimit = (CRSF_PAYLOAD[9]) / 10,
   }
 
 
@@ -151,6 +148,8 @@ local function refresh(wgt)
   drawRow1Box(row1BoxWidth * 2, wifiText, WHITE, wifiColor)
 
   -- TODO is it possible to get the percentage directly?
+  -- Try ('Batt' sensor?, nvm that's just voltage)
+  -- TODO given that these ranges depend on the battery, we should also show the voltage.
   local fullVoltage = 8.3
   local emptyVoltage = 6.7
   local batteryPercent = 0
@@ -159,7 +158,7 @@ local function refresh(wgt)
   end
   -- Draw transmitter battery percentage
   drawBoxWithText(row1BoxWidth * 3, 0, 480 - (row1BoxWidth * 3), 34, BLACK, WHITE,
-    "TX " .. math.floor(batteryPercent) .. "%")
+    "TX " .. string.format("%.1f", telemetryData.batt) .. "V")
 
 
   -- Row 2
@@ -180,7 +179,7 @@ local function refresh(wgt)
 
   -- Row 5 (RSSI)
   local rssiString = "RSSI: " .. telemetryData.rssi .. "dB"
-  drawProgressBarWithText(x, y + 4 * lineHeight, -telemetryData.rssi, 130, rssiString)
+  drawProgressBarWithText(x, y + 4 * lineHeight, 130 + telemetryData.rssi, 130, rssiString)
 
   -- Row 6 (Link Quality)
   local linkString = "LINK: " .. telemetryData.link .. "%"
@@ -192,7 +191,7 @@ local function refresh(wgt)
   local torqueLimitString = "TOR " .. string.format("%.1f", telemetryData.torqueLimit) .. "Nm"
   local limitsString = speedLimitString .. " " .. currentLimitString .. " " .. torqueLimitString
   lcd.drawText(x + 4, y + 6 * lineHeight, limitsString, textColor + MIDSIZE)
-
+  
   -- Row 8 (low & critical battery voltage)
   --   local lowVoltageString = string.format("%.1f", 17.5)
   --   local criticalVoltageString = string.format("%.1f", 16.5)
