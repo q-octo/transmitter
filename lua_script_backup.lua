@@ -1,4 +1,5 @@
 CRSF_PAYLOAD = {
+  1,    -- Message type (1 = system state)
   0,    -- Wifi
   0,    -- Armed
   0,    -- Control Source
@@ -8,23 +9,36 @@ CRSF_PAYLOAD = {
   0,    -- Torque Limit
 }
 
+CHANNEL_CONTROL_SOURCE = 'ch6'
+CHANNEL_ARMED = 'ch5'
+CHANNEL_WIFI = 'ch7'
+
 -- CRSF_PAYLOAD = {
+--   1,    -- Message type (1 = system state)
 --   1,    -- Wifi
 --   1,    -- Armed
 --   3,    -- Control Source
 --   1,    -- Status
---   0x01, 0x28, -- Speed Limit
---   0x00, 0xFA, -- Current Limit
+--   0x28, 0x01 -- Speed Limit
+--   0xFA, 0x00 -- Current Limit
 --   65,    -- Torque Limit
 -- }
 
+local function getControlSourceIndex()
+  local value = getValue(CHANNEL_CONTROL_SOURCE)
+  if value < 0 then return 0 end
+  if value == 0 then return 1 end
+  return 2
+end
+
 -- Function to handle the source value logic based on a channel value
-local function getSourceValue(channel)
-  local value = getValue(channel)
-  if value < 0 then return "MANUAL" end
-  if value == 0 then return "ONBCOM" end
+local function getControlSourceString()
+  local index = getControlSourceIndex()
+  if index == 0 then return "MANUAL" end
+  if index == 1 then return "ONBCOM" end
   return "FL_CON"
 end
+
 
 local function crossfirePop()
   local command, data = crossfireTelemetryPop() -- 从遥测系统弹出命令和数据
@@ -108,17 +122,18 @@ local function refresh(wgt)
     fuel = getValue('Bat%'),
     curr = getValue('Curr'),
     volt = getValue('RxBt'),
-    armed = getValue('ch5'),
-    trueArmed = CRSF_PAYLOAD[2] == 1,
+    armed = getValue(CHANNEL_ARMED),
+    trueArmed = CRSF_PAYLOAD[3] == 1,
     batt = getValue('tx-voltage'),
-    wifi = getValue('ch7') > 0,
-    trueWifi = CRSF_PAYLOAD[1] == 1,
+    wifi = getValue(CHANNEL_WIFI) > 0,
+    trueWifi = CRSF_PAYLOAD[2] == 1,
     bat1 = getValue('Capa'),
-    trueControlSource = CRSF_PAYLOAD[3],
-    statusInt = CRSF_PAYLOAD[4],
-    speedLimit = (CRSF_PAYLOAD[5] * 256 + CRSF_PAYLOAD[6]) / 10,
-    currentLimit = (CRSF_PAYLOAD[7] * 256 + CRSF_PAYLOAD[8]) / 10,
-    torqueLimit = (CRSF_PAYLOAD[9]) / 10,
+    trueControlSource = CRSF_PAYLOAD[4],
+    statusInt = CRSF_PAYLOAD[5],
+    -- little endian
+    speedLimit = (CRSF_PAYLOAD[7] * 256 + CRSF_PAYLOAD[6]) / 10,
+    currentLimit = (CRSF_PAYLOAD[9] * 256 + CRSF_PAYLOAD[8]) / 10,
+    torqueLimit = (CRSF_PAYLOAD[10]) / 10,
   }
 
 
@@ -132,8 +147,11 @@ local function refresh(wgt)
   local row1BoxWidth = 130
 
   -- Draw source
-  local sourceValue = getSourceValue('ch6')
-  drawRow1Box(row1BoxWidth * 0, sourceValue, BLACK, WHITE)
+  local sourceValue = getControlSourceString()
+  -- 0, 1 or 2
+  local sourceIndex = getControlSourceIndex()
+  local sourceColor = (sourceIndex == telemetryData.trueControlSource) and GREEN or ORANGE
+  drawRow1Box(row1BoxWidth * 0, sourceValue, WHITE, sourceColor)
 
   -- Draw armed/disarmed
   local armedBool = telemetryData.armed <= 0
@@ -197,79 +215,6 @@ local function refresh(wgt)
   --   local criticalVoltageString = string.format("%.1f", 16.5)
   --   local voltageThresholdsString = "LOW/EMPTY BATTERY VOLT " .. lowVoltageString .. "/" .. criticalVoltageString .. "V"
   --   lcd.drawText(x + 4, y + 7 * lineHeight, voltageThresholdsString, textColor + MIDSIZE)
-
-
-
-  -- Draw RSSI
-  -- lcd.drawText(x + 2, y + lineHeight, "RSSI:" .. telemetryData.rssi .. "dB", textColor + MIDSIZE)
-  -- drawProgressBar(x + labelWidth, y + lineHeight, barWidth, barHeight, telemetryData.rssi, 100, barColor)
-
-  -- Draw LINK
-  -- lcd.drawText(x + 2, y + 2 * lineHeight, "LINK:" .. telemetryData.link .. "%", textColor + MIDSIZE)
-  -- drawProgressBar(x + labelWidth, y + 2 * lineHeight, barWidth, barHeight, telemetryData.link, 100, barColor)
-
-  -- Draw ROVER ENABLED status
-  -- local roverColor = telemetryData.rover <= 0 and GREEN or RED
-  -- lcd.drawText(x + 2, y + 3 * lineHeight, "ROVER ENABLED:", textColor + MIDSIZE)
-  -- lcd.drawFilledRectangle(x + labelWidth + 250, y + 3 * lineHeight, barHeight + 10, barHeight, roverColor)
-
-  -- Draw DASHBOARD ENABLED status
-  -- local dashboardColor = telemetryData.wifi <= 0 and GREEN or RED
-  -- lcd.drawText(x + 2, y + 4 * lineHeight, "DASHBOARD ENABLED:", textColor + MIDSIZE)
-  -- lcd.drawFilledRectangle(x + labelWidth + 250, y + 4 * lineHeight, barHeight + 10, barHeight, dashboardColor)
-
-  -- Draw FUEL
-  -- lcd.drawText(x + 2, y + 5 * lineHeight, "Batt:" .. telemetryData.fuel .. "%", textColor + MIDSIZE)
-  -- drawProgressBar(x + labelWidth, y + 5 * lineHeight, barWidth, barHeight, telemetryData.fuel, 100, barColor)
-
-  -- Draw CURRENT
-  -- lcd.drawText(x + 2, y + 6 * lineHeight, "CURRENT:" .. telemetryData.curr .. "A", textColor + MIDSIZE)
-  --Drew BATT
-  -- lcd.drawText(x + labelWidth + 60, y + 6 * lineHeight, "Bat:" .. telemetryData.bat1 .. "mAh", textColor + MIDSIZE)
-  --lcd.drawText(x + 120, y + 6*lineHeight, "BATT " .. telemetryData.batt .. "A", textColor + MIDSIZE)
-  -- Draw VOLTAGE
-  -- lcd.drawText(x + labelWidth + 170, y + 6 * lineHeight, "VOLTAGE:" .. telemetryData.volt .. "V", textColor + MIDSIZE)
-
-
-  -- local eng1Data = {
-  --   tmp = getValue('1Tmp'),
-  --   rpm = getValue('1Rpm'),
-  --   per = getValue('1Per'),
-  --   torque = getValue('1Tor')
-  -- }
-
-  -- local eng2Data = {
-  --   tmp = getValue('2Tmp'),
-  --   rpm = getValue('2Rpm'),
-  --   per = getValue('2Per'),
-  --   torque = getValue('2Tor')
-  -- }
-
-  -- -- Display the data for engine 1
-  -- local eng1X = x + 2
-  -- lcd.drawText(eng1X, y + 7*lineHeight, "L: " .. eng1Data.tmp .. "°C", textColor + MIDSIZE)
-  -- eng1X = eng1X + 100
-  -- lcd.drawText(eng1X, y + 7*lineHeight, eng1Data.rpm .. "RAD/s", textColor + MIDSIZE)
-  -- eng1X = eng1X + 100
-  -- lcd.drawText(eng1X, y + 7*lineHeight, eng1Data.per .. "°", textColor + MIDSIZE)
-  -- eng1X = eng1X + 100
-  -- lcd.drawText(eng1X, y + 7*lineHeight, eng1Data.torque .. "Nm", textColor + MIDSIZE)
-
-  -- -- Display the data for engine 2
-  -- local eng2X = x + 2
-  -- lcd.drawText(eng2X, y + 8*lineHeight, "R: " .. eng2Data.tmp .. "°C", textColor + MIDSIZE)
-  -- eng2X = eng2X + 100
-  -- lcd.drawText(eng2X, y + 8*lineHeight, eng2Data.rpm .. "RAD/s", textColor + MIDSIZE)
-  -- eng2X = eng2X + 100
-  -- lcd.drawText(eng2X, y + 8*lineHeight, eng2Data.per .. "°", textColor + MIDSIZE)
-  -- eng2X = eng2X + 100
-  -- lcd.drawText(eng2X, y + 8*lineHeight, eng2Data.torque .. "Nm", textColor + MIDSIZE)
-  -- lcd.drawText(x + 2, y + 7 * lineHeight, "COMMAND" .. LastCommand, textColor + MIDSIZE)
-  -- lcd.drawText(x + 202, y + 7 * lineHeight, "TYPE" .. Frame_type, textColor + MIDSIZE)
-  --lcd.drawText(x+202,y+7*lineHeight,"COMMAND"..LastCommand,textColor+MIDSIZE)
-
-  -- lcd.drawText(x + 2, y + 8 * lineHeight, "[2]" .. L_tmp, textColor + MIDSIZE)
-  -- lcd.drawText(x + 102, y + 8 * lineHeight, "[3]" .. R_tmp, textColor + MIDSIZE)
 end
 
 -- Return the widget table containing all necessary widget functions
