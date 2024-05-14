@@ -7,6 +7,8 @@ CRSF_PAYLOAD = {
   0x00, 0x00, -- Speed Limit
   0x00, 0x00, -- Current Limit
   0,    -- Torque Limit
+  0x00, 0x00, -- Speed Kp
+  0x00, 0x00, -- Speed Ki
 }
 
 CHANNEL_CONTROL_SOURCE = 'ch6'
@@ -22,6 +24,8 @@ CHANNEL_WIFI = 'ch7'
 --   0x28, 0x01 -- Speed Limit
 --   0xFA, 0x00 -- Current Limit
 --   65,    -- Torque Limit
+  -- 0x00, 0x00, -- Speed Kp
+  -- 0x00, 0x00, -- Speed Ki
 -- }
 
 local function getControlSourceIndex()
@@ -134,6 +138,8 @@ local function refresh(wgt)
     speedLimit = (CRSF_PAYLOAD[7] * 256 + CRSF_PAYLOAD[6]) / 10,
     currentLimit = (CRSF_PAYLOAD[9] * 256 + CRSF_PAYLOAD[8]) / 10,
     torqueLimit = (CRSF_PAYLOAD[10]) / 10,
+    speedKp = (CRSF_PAYLOAD[12] * 256 + CRSF_PAYLOAD[11]) / 10,
+    speedKi = (CRSF_PAYLOAD[14] * 256 + CRSF_PAYLOAD[13]) / 10,
   }
 
 
@@ -204,12 +210,19 @@ local function refresh(wgt)
   drawProgressBarWithText(x, y + 5 * lineHeight, telemetryData.link, 100, linkString)
 
   -- Row 7 (Limits)
-  local speedLimitString = "SPEED " .. string.format("%.1f", telemetryData.speedLimit) .. "rad/s"
-  local currentLimitString = "CURR " .. string.format("%.1f", telemetryData.currentLimit) .. "A"
-  local torqueLimitString = "TOR " .. string.format("%.1f", telemetryData.torqueLimit) .. "Nm"
-  local limitsString = speedLimitString .. " " .. currentLimitString .. " " .. torqueLimitString
+  local speedLimitString = "MAX SPEED " .. string.format("%.1f", telemetryData.speedLimit) .. "rad/s"
+  local currentLimitString = "MAX CURR " .. string.format("%.1f", telemetryData.currentLimit) .. "A"
+  local torqueLimitString = "MAX TORQUE " .. string.format("%.1f", telemetryData.torqueLimit) .. "Nm"
+  local limitsString = speedLimitString .. " " .. currentLimitString
   lcd.drawText(x + 4, y + 6 * lineHeight, limitsString, textColor + MIDSIZE)
-  
+
+  -- Row 8
+  local speedKpString = "KP " .. string.format("%.1f", telemetryData.speedKp)
+  local speedKiString = "KI " .. string.format("%.1f", telemetryData.speedKi)
+  local row8Text = torqueLimitString .. " " .. speedKpString .. " " .. speedKiString
+  lcd.drawText(x + 4, y + 7 * lineHeight, row8Text, textColor + MIDSIZE)
+
+
   -- Row 8 (low & critical battery voltage)
   --   local lowVoltageString = string.format("%.1f", 17.5)
   --   local criticalVoltageString = string.format("%.1f", 16.5)
